@@ -236,18 +236,30 @@ else:
 ' "$slug" 2>/dev/null || echo "no"
 }
 
+# Re-fetch the plugin list from REST.
+# Updates the global $PLUGINS_JSON so plugin_is_active / plugin_is_installed
+# reflect current state instead of cached snapshot.
+refresh_plugins_json() {
+  PLUGINS_JSON=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 10 \
+    "$SITE_URL/wp-json/wp/v2/plugins" || echo "[]")
+}
+
 # Helper: install + activate a plugin from wordpress.org by slug via REST.
 # REST plugins endpoint accepts {slug, status} — installs from wp.org directly.
+# After install, RE-VERIFIES activation actually took effect (retries once).
 install_wp_plugin() {
   local slug="$1"
   local label="$2"
+
+  # Skip if already active
   if [ "$(plugin_is_active "$slug")" = "yes" ]; then
     ok "$label already active"
     return 0
   fi
+
+  # Already installed but inactive — just activate
   if [ "$(plugin_is_installed "$slug")" = "yes" ]; then
     info "$label already installed — activating..."
-    # Need to find its plugin path to activate
     local plugin_path
     plugin_path=$(echo "$PLUGINS_JSON" | python3 -c "$JQ_LENIENT_PY"'
 import sys
@@ -263,24 +275,58 @@ if isinstance(d, list):
         -H "Content-Type: application/json" \
         -X POST "$SITE_URL/wp-json/wp/v2/plugins/$plugin_path" \
         -d '{"status":"active"}' >/dev/null
-      ok "Activated $label"
     fi
+  else
+    info "Installing + activating $label from wordpress.org..."
+    local result err
+    result=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 60 \
+      -H "Content-Type: application/json" \
+      -X POST "$SITE_URL/wp-json/wp/v2/plugins" \
+      -d "{\"slug\":\"$slug\",\"status\":\"active\"}" || echo '{"code":"network_error"}')
+    err=$(echo "$result" | jq_lenient '.code' 2>/dev/null || echo "")
+    if [ -n "$err" ] && [ "$err" != "" ]; then
+      fail "Could not install $label: $err"
+      return 1
+    fi
+  fi
+
+  # ⭐ VERIFY activation actually took effect. WP REST sometimes returns
+  # 200 for the install but the plugin ends up inactive (load order, race).
+  refresh_plugins_json
+  if [ "$(plugin_is_active "$slug")" = "yes" ]; then
+    ok "Installed + activated $label"
     return 0
   fi
-  info "Installing + activating $label from wordpress.org..."
-  local result
-  result=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 60 \
-    -H "Content-Type: application/json" \
-    -X POST "$SITE_URL/wp-json/wp/v2/plugins" \
-    -d "{\"slug\":\"$slug\",\"status\":\"active\"}" || echo '{"code":"network_error"}')
-  local err
-  err=$(echo "$result" | jq_lenient '.code' 2>/dev/null || echo "")
-  if [ -z "$err" ] || [ "$err" = "" ]; then
-    ok "Installed + activated $label"
-  else
-    fail "Could not install $label: $err"
-    return 1
+
+  # Retry activation once
+  warn "$label installed but not active yet — retrying activation..."
+  local plugin_path
+  plugin_path=$(echo "$PLUGINS_JSON" | python3 -c "$JQ_LENIENT_PY"'
+import sys
+slug = sys.argv[1]
+d = _load(sys.stdin.read())
+if isinstance(d, list):
+    for p in d:
+        if p.get("plugin","").startswith(slug+"/"):
+            print(p["plugin"]); break
+' "$slug" 2>/dev/null)
+  if [ -n "$plugin_path" ]; then
+    curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 30 \
+      -H "Content-Type: application/json" \
+      -X POST "$SITE_URL/wp-json/wp/v2/plugins/$plugin_path" \
+      -d '{"status":"active"}' >/dev/null
+    sleep 1
+    refresh_plugins_json
   fi
+
+  if [ "$(plugin_is_active "$slug")" = "yes" ]; then
+    ok "Installed + activated $label (after retry)"
+    return 0
+  fi
+
+  fail "$label installed but could NOT auto-activate."
+  info "Activate manually: ${SITE_URL}/wp-admin/plugins.php"
+  return 1
 }
 
 # Helper: install + activate a theme from wordpress.org by slug
@@ -457,14 +503,77 @@ print(a[0]["browser_download_url"] if a else d.get("zipball_url",""))
   fi
 fi
 
-# ---- 6b. Verify MCP namespace --------------------------------------------
+# ---- 6b. Verify MCP namespace, with interactive recovery on failure --------
 info "Verifying /mcp/elementor-mcp-server route..."
 sleep 2
-NS_JSON=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 10 "$SITE_URL/wp-json/" || echo "{}")
-HAS_MCP=$(echo "$NS_JSON" | jq_lenient_contains '.namespaces' 'mcp' 2>/dev/null || echo "no")
-[ "$HAS_MCP" = "yes" ] || abort "MCP namespace still not registered. Check that both plugins activated successfully."
-HAS_EM=$(echo "$NS_JSON" | jq_lenient_contains '.routes' 'elementor-mcp-server' 2>/dev/null || echo "no")
-[ "$HAS_EM" = "yes" ] && ok "Elementor MCP server route registered ✓" || warn "MCP namespace exists but elementor-mcp-server route is missing."
+
+verify_mcp_namespace() {
+  local ns_json
+  ns_json=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 10 "$SITE_URL/wp-json/" || echo "{}")
+  local has_mcp has_em
+  has_mcp=$(echo "$ns_json" | jq_lenient_contains '.namespaces' 'mcp' 2>/dev/null || echo "no")
+  has_em=$(echo "$ns_json" | jq_lenient_contains '.routes' 'elementor-mcp-server' 2>/dev/null || echo "no")
+  [ "$has_mcp" = "yes" ] && [ "$has_em" = "yes" ] && return 0
+  return 1
+}
+
+if verify_mcp_namespace; then
+  ok "Elementor MCP server route registered ✓"
+else
+  # Recovery loop — common cause: plugins installed but didn't auto-activate
+  warn "MCP namespace not yet registered."
+  cat <<EOF
+
+    This usually means one of the MCP plugins installed but didn't
+    auto-activate. WordPress sometimes returns success for the install
+    request even when activation was skipped (load order, race condition,
+    or PHP-FPM opcode cache).
+
+    Please open WP Admin → Plugins in your browser and confirm BOTH
+    of these are active (look for "Deactivate" not "Activate"):
+
+      • MCP Adapter
+      • MCP Tools for Elementor
+
+    URL: ${CYAN}${SITE_URL}/wp-admin/plugins.php${RESET}
+
+    If either is grey/inactive, click "Activate" on it.
+
+EOF
+  ask "Press Enter when both are active (or 'skip' to bypass this check)..."
+  read -r RECOVER
+
+  if [ "$RECOVER" = "skip" ]; then
+    warn "Skipping MCP verification — proceeding to write .mcp.json anyway."
+    warn "If Claude Code can't reach the MCP, fix the activation issue and re-run."
+  else
+    sleep 1
+    if verify_mcp_namespace; then
+      ok "Elementor MCP server route now registered ✓"
+    else
+      warn "Still not seeing the MCP namespace."
+      info "Things to try, in order:"
+      info "  1. WP Admin → Plugins: deactivate then reactivate both MCP plugins"
+      info "  2. Check WP Admin → Plugins for any error notices at the top"
+      info "  3. WP Admin → Settings → Permalinks → Save (flushes rewrites)"
+      info "  4. Restart your Local site (stop + start)"
+      ask "Try again? Press Enter to retry, or 'skip' to write .mcp.json anyway..."
+      read -r RECOVER2
+      if [ "$RECOVER2" = "skip" ]; then
+        warn "Proceeding to .mcp.json anyway. Fix activation before using Claude."
+      else
+        sleep 1
+        if verify_mcp_namespace; then
+          ok "Elementor MCP server route now registered ✓"
+        else
+          fail "MCP namespace still missing after retry."
+          info "Writing .mcp.json anyway so you can debug from there."
+          info "Run this to see what's wrong: curl -u USER:PASS ${SITE_URL}/wp-json/"
+        fi
+      fi
+    fi
+  fi
+fi
 
 # ---- 7. Write .mcp.json ------------------------------------------------------
 step "8/8  Writing .mcp.json"
