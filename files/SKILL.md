@@ -90,24 +90,54 @@ title: "A <em>quiet</em> practice for an <em>uncommon</em> clientele."
 
 Cormorant Garamond and most luxury serifs have italic variants that auto-load when `<em>` appears. Confirm via the rendered page; if italics fail, the global typography needs the italic variant explicitly enabled.
 
-## The widget-vs-HTML decision tree
+## The widget-vs-HTML decision — DEFAULT TO NATIVE WIDGETS
 
-The MCP exposes ~30 free-Elementor widgets, but some patterns are **much cleaner as a single styled HTML widget** than as 50+ nested containers:
+> 🚨 **CRITICAL ANTI-PATTERN — read this first.**
+>
+> **Do NOT paste an entire HTML page into one HTML widget.** Do NOT build a homepage that is "1 container with 3 HTML widgets inside." That is not building with Elementor — that is using Elementor as a wrapper around a static webpage. The user **cannot edit it** in the Elementor visual editor, **cannot reuse the design tokens**, and **cannot iterate** on it without going back to source code.
+>
+> If you find yourself thinking *"I'll just dump this section as HTML, it's faster,"* **STOP.** Break it into native widgets.
 
-**Use native Elementor widgets when:**
-- It's a one-off heading, image, button, or text block
-- The user will want to edit copy in the Elementor visual editor later
-- The widget maps 1:1 to a design element (Heading widget for headings, Image for images)
+### Always default to native widgets
 
-**Drop into a single HTML widget when:**
-- You're building a **card grid** (4+ identical cards) — saves dozens of widget calls
-- Content lives **inside Tabs/Accordion** — `add-tabs` only accepts `tab_content` as HTML strings, so any rich card grid inside a tab *must* be HTML
-- You need **CSS pseudo-elements** (`::before`, `::after`), **CSS Grid**, **gradient overlays on a child**, or **hover scale on an image inside an `<a>`** — these aren't exposed by Elementor widget controls
-- You need a **scoped style block** that styles multiple elements consistently (form fields, listing cards)
+For every section the user wants, build it from native Elementor widgets:
 
-**Scope HTML widget styles to avoid leaking** by either:
-- Wrapping in a unique class: `.mv-listings .mv-card { ... }`
-- Targeting the parent Elementor element ID: `.elementor-element-<id> .mv-card { ... }`
+- **Headings** → `add-heading` widget *(supports inline `<em>` for italic emphasis)*
+- **Body copy** → `add-text-editor` widget
+- **Images** → `add-image` widget *(NOT an `<img>` tag inside an HTML widget)*
+- **Buttons / CTAs** → `add-button` widget *(NOT an `<a>` styled as a button)*
+- **Layout / spacing** → `add-container` with proper `flex_*` settings *(NOT `<div>`s with CSS flex)*
+- **Lists** → `add-icon-list` widget
+- **Tabs** → `add-tabs` widget
+- **Accordions / FAQs** → `add-accordion` widget
+- **Forms** → Fluent Forms shortcode via `add-shortcode` widget
+- **Nav menu in headers** → UAE Nav Menu widget *(`uael-nav-menu`)*
+
+### When HTML widget IS allowed *(narrow list — exceptions only)*
+
+Only reach for an HTML widget in these specific cases. **Anything not on this list goes through native widgets.**
+
+1. **Tab/accordion content with rich layout.** `add-tabs` only accepts `tab_content` as a string of HTML, so a multi-card grid inside a tab MUST be HTML. *(But the wrapping Tabs widget itself is still native.)*
+2. **Decorative-only flourishes** with no native equivalent — a thin gold rule with a CSS-pseudo-element flourish, an animated underline that grows on hover, a gradient overlay on a child element. **Even then, prefer to pair it with a native widget rather than replacing one.**
+3. **Form HTML as a flagged placeholder** when no real form plugin is wired up yet — and you must explicitly tell the user "form is visual only, doesn't capture submissions."
+4. **Site-wide CSS overrides** scoped to a specific Elementor element ID *(e.g., styling the tab strip of an `add-tabs` widget that the widget controls don't expose)*. These should be small style blocks, not whole sections of markup.
+
+### What about card grids of 4+ items?
+
+Earlier versions of this skill said "use one HTML widget for card grids — it's faster than 50 widget calls." That advice was wrong because it led to non-editable pages.
+
+**The correct path for card grids:**
+
+- Build the first card with native widgets *(Container → Image → Heading → Text Editor → Button)*
+- Use `duplicate-element` to copy it 3+ more times
+- Use `update-element` to change the copy/image on each duplicate
+- Wrap them in a parent Container with `flex_direction: row` and `flex_wrap: wrap`
+
+This is more widget calls, yes, but the result is a **real Elementor card grid** the user can edit, restyle globally, or reuse as a template.
+
+### When mixing native widgets and HTML *(scoped CSS only)*
+
+If you need to style a native widget from an HTML block elsewhere on the page (e.g., styling the Tabs widget tab strip), use the parent Elementor element ID selector pattern. **The HTML widget here contains ONLY a `<style>` block — no markup, no content.**
 
 ### When mixing native widgets and HTML
 
