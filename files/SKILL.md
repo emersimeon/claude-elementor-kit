@@ -135,13 +135,9 @@ Earlier versions of this skill said "use one HTML widget for card grids — it's
 
 This is more widget calls, yes, but the result is a **real Elementor card grid** the user can edit, restyle globally, or reuse as a template.
 
-### When mixing native widgets and HTML *(scoped CSS only)*
+### Cross-widget styling — `<style>`-only HTML widgets
 
-If you need to style a native widget from an HTML block elsewhere on the page (e.g., styling the Tabs widget tab strip), use the parent Elementor element ID selector pattern. **The HTML widget here contains ONLY a `<style>` block — no markup, no content.**
-
-### When mixing native widgets and HTML
-
-If you need to style a native widget from an HTML block elsewhere on the page (e.g., styling the Tabs widget tab strip), use the parent Elementor element ID selector pattern:
+When you need to style a native widget from outside (e.g., overriding the Tabs widget tab strip styles that the widget controls don't expose), use a **`<style>`-only HTML widget**: it contains ONLY a `<style>` block — no markup, no rendered content. Scope every selector to the parent Elementor element ID:
 
 ```html
 <style>
@@ -155,7 +151,9 @@ If you need to style a native widget from an HTML block elsewhere on the page (e
 </style>
 ```
 
-The `f8d1545` is the `element_id` returned when you created the tabs widget. Always grab and remember these IDs.
+The `f8d1545` is the `element_id` returned when you created the tabs widget. Always grab and remember these IDs — they're the only stable selector across page reloads.
+
+> ⚠️ **An HTML widget used for cross-widget styling MUST contain only `<style>`.** If you find yourself adding HTML markup *(divs, anchors, spans with text content)* alongside the style block, you're falling back into the anti-pattern at the top of this section. Stop. That markup belongs in native widgets.
 
 ## Building order
 
@@ -189,7 +187,9 @@ The MCP plugin's `create-theme-template` tool requires **Elementor Pro**. With E
 
 ### When UAE Nav Menu isn't available
 
-If only HFE (the lighter plugin) is installed without UAE: render the menu via Shortcode widget calling `[wp_nav_menu menu="Main"]`, OR fall back to a styled HTML widget that lists the links manually. The UAE Nav Menu widget is strongly preferred because it handles responsive behavior automatically.
+If only HFE (the lighter plugin) is installed without UAE: use the Shortcode widget calling `[wp_nav_menu menu="Main" container=""]` — WordPress's built-in shortcode renders the menu as a real `<ul>` with all the right classes for active-page highlighting and responsive styling.
+
+**Do not** fall back to manually listing the menu items inside an HTML widget — that hard-codes the navigation in two places (the WP menu AND the Elementor template) which means future menu edits won't reflect in the header. Always render the menu through `[wp_nav_menu]` or the UAE widget.
 
 ### Footer pattern
 
@@ -400,4 +400,14 @@ Use `ToolSearch` query format `select:tool1,tool2,tool3` to load multiple in one
 10. Pause for human review before header/footer
 ```
 
-When working from a designed HTML mockup, keep `config.js`-style design tokens in mind: brand colors → global colors; brand fonts → global typography; section copy → heading/text-editor widgets; card grids → HTML widgets; tabs/accordions → native widgets with HTML in their content slots.
+When working from a designed HTML mockup, map the source design to Elementor like this:
+
+- **Brand colors** → `update-global-colors`
+- **Brand fonts** → `update-global-typography`
+- **Section copy** → `add-heading` + `add-text-editor` widgets
+- **Card grids (4+ identical items)** → build one card with native widgets, then `duplicate-element` and `update-element` per copy
+- **Tabs/accordions** → native `add-tabs`/`add-accordion` widgets *(HTML allowed inside `tab_content` strings only — see anti-pattern section)*
+- **Forms** → real Fluent Forms shortcode via `add-shortcode` widget *(see Fluent Forms section)*
+- **Headers/footers** → `elementor-hf` post type with UAE Nav Menu widget for nav
+
+> 🚨 **Final reminder:** Default to native widgets. The HTML widget is only for the four narrow cases listed in the anti-pattern section. Never paste a complete page section as raw HTML — the user must be able to edit the result inside Elementor.
