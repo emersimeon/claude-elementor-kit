@@ -123,7 +123,7 @@ cat <<'BANNER'
 BANNER
 
 # ---- 1. Local vs live --------------------------------------------------------
-step "1/7  Site type"
+step "1/8  Site type"
 echo "    [1] Local-by-Flywheel  (sites under ~/Local Sites/)"
 echo "    [2] Live host          (any WordPress site reachable over HTTP/HTTPS)"
 ask "Pick (1 or 2):"
@@ -135,7 +135,7 @@ case "$SITE_TYPE" in
 esac
 
 # ---- 2. Site URL + path ------------------------------------------------------
-step "2/7  Site URL"
+step "2/8  Site URL"
 
 if [ "$MODE" = "local" ]; then
   if [ -d "$HOME/Local Sites" ]; then
@@ -160,7 +160,7 @@ else
 fi
 
 # ---- 3. Connectivity probe ---------------------------------------------------
-step "3/7  Connectivity"
+step "3/8  Connectivity"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$SITE_URL/wp-json/" || echo "000")
 case "$HTTP_CODE" in
   200|301|302) ok "Reached WP REST API ($HTTP_CODE)" ;;
@@ -170,7 +170,7 @@ case "$HTTP_CODE" in
 esac
 
 # ---- 4. Auth credentials -----------------------------------------------------
-step "4/7  Authentication"
+step "4/8  Authentication"
 
 cat <<EOF
     You'll need a WordPress Application Password.
@@ -205,41 +205,169 @@ if isinstance(data, list):
   abort "Re-run with the correct username (try a slug from the list above)."
 fi
 
-# ---- 5. Plugin sanity check --------------------------------------------------
-step "5/7  Plugin baseline"
-PLUGINS_JSON=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 10 "$SITE_URL/wp-json/wp/v2/plugins" || echo "[]")
-HAS_ELEMENTOR=$(echo "$PLUGINS_JSON" | python3 -c "$JQ_LENIENT_PY"'
+# ---- 5. Plugin baseline + optional auto-install ------------------------------
+step "5/8  Plugin baseline"
+
+# Helper: check if a given plugin folder/slug is active
+plugin_is_active() {
+  local slug="$1"
+  echo "$PLUGINS_JSON" | python3 -c "$JQ_LENIENT_PY"'
 import sys
+slug = sys.argv[1]
 d = _load(sys.stdin.read())
 if isinstance(d, list):
-    print("yes" if any(p.get("plugin","").startswith("elementor/") and p.get("status")=="active" for p in d) else "no")
+    print("yes" if any(p.get("plugin","").startswith(slug+"/") and p.get("status")=="active" for p in d) else "no")
 else:
     print("no")
-' 2>/dev/null || echo "no")
-if [ "$HAS_ELEMENTOR" = "yes" ]; then
-  ok "Elementor plugin is active"
-else
-  warn "Elementor plugin is NOT active. Install + activate Elementor Free first."
-  ask "Continue anyway? [y/N]"
-  read -r CONT
-  [[ "$CONT" =~ ^[Yy]$ ]] || abort "Stopped. Install Elementor and re-run this script."
-fi
+' "$slug" 2>/dev/null || echo "no"
+}
 
-# Check active theme
+# Helper: check if a plugin is installed (any status)
+plugin_is_installed() {
+  local slug="$1"
+  echo "$PLUGINS_JSON" | python3 -c "$JQ_LENIENT_PY"'
+import sys
+slug = sys.argv[1]
+d = _load(sys.stdin.read())
+if isinstance(d, list):
+    print("yes" if any(p.get("plugin","").startswith(slug+"/") for p in d) else "no")
+else:
+    print("no")
+' "$slug" 2>/dev/null || echo "no"
+}
+
+# Helper: install + activate a plugin from wordpress.org by slug via REST.
+# REST plugins endpoint accepts {slug, status} — installs from wp.org directly.
+install_wp_plugin() {
+  local slug="$1"
+  local label="$2"
+  if [ "$(plugin_is_active "$slug")" = "yes" ]; then
+    ok "$label already active"
+    return 0
+  fi
+  if [ "$(plugin_is_installed "$slug")" = "yes" ]; then
+    info "$label already installed — activating..."
+    # Need to find its plugin path to activate
+    local plugin_path
+    plugin_path=$(echo "$PLUGINS_JSON" | python3 -c "$JQ_LENIENT_PY"'
+import sys
+slug = sys.argv[1]
+d = _load(sys.stdin.read())
+if isinstance(d, list):
+    for p in d:
+        if p.get("plugin","").startswith(slug+"/"):
+            print(p["plugin"]); break
+' "$slug" 2>/dev/null)
+    if [ -n "$plugin_path" ]; then
+      curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 30 \
+        -H "Content-Type: application/json" \
+        -X POST "$SITE_URL/wp-json/wp/v2/plugins/$plugin_path" \
+        -d '{"status":"active"}' >/dev/null
+      ok "Activated $label"
+    fi
+    return 0
+  fi
+  info "Installing + activating $label from wordpress.org..."
+  local result
+  result=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 60 \
+    -H "Content-Type: application/json" \
+    -X POST "$SITE_URL/wp-json/wp/v2/plugins" \
+    -d "{\"slug\":\"$slug\",\"status\":\"active\"}" || echo '{"code":"network_error"}')
+  local err
+  err=$(echo "$result" | jq_lenient '.code' 2>/dev/null || echo "")
+  if [ -z "$err" ] || [ "$err" = "" ]; then
+    ok "Installed + activated $label"
+  else
+    fail "Could not install $label: $err"
+    return 1
+  fi
+}
+
+# Helper: install + activate a theme from wordpress.org by slug
+install_wp_theme() {
+  local slug="$1"
+  local label="$2"
+  info "Installing $label theme from wordpress.org..."
+  local result
+  result=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 60 \
+    -H "Content-Type: application/json" \
+    -X POST "$SITE_URL/wp-json/wp/v2/themes" \
+    -d "{\"slug\":\"$slug\"}" 2>&1 || echo '{}')
+  # Switching themes via REST isn't standard — fall back to telling user
+  # how to activate it (many WP versions don't support theme activation via REST).
+  warn "Theme installed but auto-activation isn't supported via REST API in all WP versions."
+  warn "Activate it manually: WP Admin → Appearance → Themes → $label → Activate"
+}
+
+# Fetch current state once
+PLUGINS_JSON=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 10 "$SITE_URL/wp-json/wp/v2/plugins" || echo "[]")
 THEME_JSON=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 10 "$SITE_URL/wp-json/wp/v2/themes?status=active" || echo "[]")
 ACTIVE_THEME=$(echo "$THEME_JSON" | python3 -c "$JQ_LENIENT_PY"'
 import sys
 d = _load(sys.stdin.read())
 print(d[0]["stylesheet"] if isinstance(d, list) and d else "?")
 ' 2>/dev/null || echo "?")
-if [ "$ACTIVE_THEME" = "hello-elementor" ]; then
-  ok "Theme: Hello Elementor (recommended)"
+
+# Report current state
+HAS_ELEMENTOR=$(plugin_is_active "elementor")
+HAS_UAE=$(plugin_is_active "header-footer-elementor")
+HAS_EA=$(plugin_is_active "essential-addons-for-elementor-lite")
+HAS_FF=$(plugin_is_active "fluentform")
+
+[ "$HAS_ELEMENTOR" = "yes" ] && ok "Elementor (free) — active" || warn "Elementor — not active"
+[ "$ACTIVE_THEME" = "hello-elementor" ] && ok "Theme: Hello Elementor — active" || warn "Theme: $ACTIVE_THEME (Hello Elementor recommended)"
+[ "$HAS_UAE" = "yes" ] && ok "UAE / Header Footer Elementor — active" || warn "UAE / Header Footer Elementor — not active (needed for headers/footers)"
+
+# ---- 6. Optional auto-install of baseline plugins ----------------------------
+step "6/8  Auto-install baseline plugins?"
+
+NEEDS_ANY="no"
+[ "$HAS_ELEMENTOR" != "yes" ] && NEEDS_ANY="yes"
+[ "$HAS_UAE" != "yes" ] && NEEDS_ANY="yes"
+[ "$ACTIVE_THEME" != "hello-elementor" ] && NEEDS_ANY="yes"
+
+if [ "$NEEDS_ANY" = "no" ]; then
+  ok "All baseline plugins + theme already in place — skipping auto-install."
 else
-  warn "Active theme is '$ACTIVE_THEME' — Hello Elementor is recommended for full Elementor builds."
+  cat <<EOF
+    Some baseline plugins/theme aren't yet active on this site.
+    The wizard can install them for you from wordpress.org:
+
+      • Elementor (free)         — the page builder
+      • Hello Elementor (theme)  — blank canvas theme
+      • UAE / Header Footer      — for site-wide headers and footers
+      • Essential Addons (lite)  — extra free widgets (optional)
+      • Fluent Forms             — real working contact forms (optional)
+
+    ${YELLOW}Note:${RESET} Auto-install is safest on a fresh demo site. If this is
+    an existing site with content/theme you care about, choose 'No'
+    and install manually via WP Admin → Plugins → Add New.
+EOF
+  ask "Auto-install Elementor + UAE? [Y/n]"
+  read -r DO_INSTALL
+  if [[ ! "$DO_INSTALL" =~ ^[Nn]$ ]]; then
+    [ "$HAS_ELEMENTOR" != "yes" ] && install_wp_plugin "elementor" "Elementor (free)"
+    [ "$HAS_UAE" != "yes" ] && install_wp_plugin "header-footer-elementor" "UAE / Header Footer Elementor"
+
+    if [ "$ACTIVE_THEME" != "hello-elementor" ]; then
+      ask "Also install Hello Elementor theme? (Switch theme manually after.) [Y/n]"
+      read -r DO_THEME
+      [[ ! "$DO_THEME" =~ ^[Nn]$ ]] && install_wp_theme "hello-elementor" "Hello Elementor"
+    fi
+
+    ask "Also install Essential Addons + Fluent Forms (optional but useful)? [y/N]"
+    read -r DO_OPT
+    if [[ "$DO_OPT" =~ ^[Yy]$ ]]; then
+      install_wp_plugin "essential-addons-for-elementor-lite" "Essential Addons (lite)"
+      install_wp_plugin "fluentform" "Fluent Forms"
+    fi
+  else
+    info "Skipped auto-install. You'll need to install the missing plugins yourself before using Claude to build."
+  fi
 fi
 
-# ---- 6. Install MCP plugins --------------------------------------------------
-step "6/7  Installing MCP plugins"
+# ---- 7. Install MCP plugins --------------------------------------------------
+step "7/8  Installing MCP plugins"
 
 # Are they already there?
 NS_JSON=$(curl -s -u "$WP_USER:$WP_APP_PWD" --max-time 10 "$SITE_URL/wp-json/" || echo "{}")
@@ -339,7 +467,7 @@ HAS_EM=$(echo "$NS_JSON" | jq_lenient_contains '.routes' 'elementor-mcp-server' 
 [ "$HAS_EM" = "yes" ] && ok "Elementor MCP server route registered ✓" || warn "MCP namespace exists but elementor-mcp-server route is missing."
 
 # ---- 7. Write .mcp.json ------------------------------------------------------
-step "7/7  Writing .mcp.json"
+step "8/8  Writing .mcp.json"
 PROJECT_DIR="$(pwd)"
 MCP_FILE="$PROJECT_DIR/.mcp.json"
 

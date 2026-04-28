@@ -140,12 +140,38 @@ For a new page, build top-down section by section, in small commits, verifying a
 
 ## Header/Footer notes
 
-The MCP plugin's `create-theme-template` tool requires **Elementor Pro**. With Elementor Free, headers and footers are built using:
+The MCP plugin's `create-theme-template` tool requires **Elementor Pro**. With Elementor Free, headers and footers are built using **Ultimate Addons for Elementor (UAE)** by Brainstorm Force (the kit's setup wizard auto-installs this; alternatively the lighter **Header Footer Elementor (HFE)** plugin from the same company also works — both share the same `elementor-hf` post type).
 
-1. **Header Footer Elementor** plugin (Brainstorm Force or UAE) — adds a **Header Footer Elementor → Add New** menu in WP Admin where you create a header/footer post and edit it with Elementor
-2. The MCP can edit those header/footer posts the same way it edits regular pages — just need the post_id, which you find via `list-pages({post_type: "elementor-hf"})` or by listing all post types
+### Building a site-wide header
 
-For the form widget on contact sections: Elementor's Form widget is also Pro. Free workaround is **Fluent Forms** (or Contact Form 7) accessed via the Shortcode widget. For an early visual build, a styled HTML `<form>` with a JS-alert handler is fine as a placeholder — flag this to the user as "form is visual only, needs wiring before going live."
+1. **Create the WordPress menu first.** Tell the user to go to WP Admin → Appearance → Menus, name it (e.g. "Main"), add the pages they want, and save. The MCP cannot create WP nav menus directly — this step is a one-minute manual action.
+
+2. **Create the header template post.** Use `create-page` with `post_type: "elementor-hf"` and a title like "Site Header". Then set the following post meta via WP-CLI or the `update-element` flow:
+   - `ehf_template_type` = `"type_header"` (or `"type_footer"` for footers)
+   - `display-on-canvas` = `"yes"` (displays site-wide; alternative meta keys like `ehf_target_include_locations` may apply for narrower scopes)
+
+3. **Build the layout.** A row container with three children:
+   - **Left:** logo (Heading widget with brand name in display serif, OR `Site Logo` widget if UAE is installed)
+   - **Center:** **UAE Nav Menu widget** (`uael-nav-menu`) pointed at the WordPress menu by name. UAE's nav menu widget is **free** and handles mobile hamburger, dropdowns, hover states, active-page highlighting automatically — much cleaner than rendering nav as raw HTML.
+   - **Right:** Button widget with "Contact" or "Get In Touch" CTA
+
+4. **Verify display.** After building, instruct the user to check WP Admin → Appearance → Header Footer Builder → confirm the Display On rule is set to "Entire Website."
+
+### When UAE Nav Menu isn't available
+
+If only HFE (the lighter plugin) is installed without UAE: render the menu via Shortcode widget calling `[wp_nav_menu menu="Main"]`, OR fall back to a styled HTML widget that lists the links manually. The UAE Nav Menu widget is strongly preferred because it handles responsive behavior automatically.
+
+### Footer pattern
+
+Identical post type (`elementor-hf`) but `ehf_template_type = "type_footer"`. Layout is typically a 4-column container (brand block + 3 link columns) on a dark background, with a bottom row containing copyright + social icons.
+
+### Forms
+
+Elementor's Form widget is Pro. Free workarounds, in order of preference:
+
+1. **Fluent Forms** (recommended; the kit's wizard offers to auto-install it) — build form in Fluent Forms → grab its shortcode like `[fluentform id="1"]` → drop in via Elementor's `add-shortcode` widget
+2. **Contact Form 7** — same shortcode pattern
+3. **Styled HTML `<form>` with a JS-alert handler** — only as a visual placeholder for early builds. **Flag it explicitly** to the user as "form is visual only — submissions don't go anywhere yet."
 
 ## Setup gotchas (what bit me last time)
 

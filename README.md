@@ -39,17 +39,55 @@ After running both, you can tell Claude *"build me a hero section with this desi
 
 ## Prerequisites
 
-Before running the installer, make sure you have:
+The kit touches **five layers** of stuff. Some you install yourself, some the wizard handles for you. Here's the full picture so nothing surprises you mid-setup.
 
-- **[Claude Code](https://claude.ai/download)** installed
-- A **WordPress site** to build on — either:
-  - **Local-by-Flywheel** ([download](https://localwp.com/)) for offline development, OR
-  - A **live hosted WordPress site** with admin access
-- On the WordPress site:
-  - **Elementor (free)** plugin installed and activated
-  - **Hello Elementor** theme active (recommended — it's a blank canvas)
-  - An **Application Password** ([how to create](https://wordpress.org/documentation/article/application-passwords/))
-- For Windows: **[Git Bash](https://git-scm.com/download/win)** (gives you bash, curl, and other tools the setup script needs)
+### Layer 1 — On your computer *(install once, ever)*
+
+- ☐ **[Claude Code](https://claude.ai/download)** — the AI assistant the kit plugs into
+- ☐ **[Local by Flywheel](https://localwp.com/)** *(only if you want offline WordPress — skip if you have a live site)*
+- ☐ **[Git Bash](https://git-scm.com/download/win)** *(Windows only — gives you `bash`, `curl`, `python`, `zip` that the setup script needs. Mac and Linux users already have these.)*
+
+### Layer 2 — Inside Local *(or your hosting panel)*
+
+- ☐ **A WordPress site.** Create a fresh one in Local, or have admin access to a live host.
+- ☐ **An Application Password.** WP Admin → Users → Profile → scroll to *Application Passwords* → click Add. Copy the password — that's the credential the wizard uses. ([WordPress docs](https://wordpress.org/documentation/article/application-passwords/))
+
+### Layer 3 — WordPress plugins + theme
+
+You can install these yourself OR let the **setup wizard auto-install them for you** (it asks). All are free, on the WordPress.org plugin directory.
+
+**Required:**
+
+| Plugin / Theme | What it does |
+|---|---|
+| **Elementor (free)** | The page builder — Claude builds pages inside this |
+| **Hello Elementor** *(theme)* | Blank canvas theme that doesn't fight Elementor's styling |
+| **Ultimate Addons for Elementor (UAE)** | Lets you build site-wide headers and footers (Theme Builder is Pro-only) plus a free Nav Menu widget |
+
+**Optional but useful:**
+
+| Plugin | What it does |
+|---|---|
+| **Essential Addons for Elementor (lite)** | Free widgets like Post Grid that aren't in Elementor base |
+| **Fluent Forms** | Real working contact forms (Elementor's Form widget is Pro) |
+
+### Layer 4 — The MCP plugins *(automatic — wizard handles these)*
+
+You **don't install these yourself.** The setup wizard downloads them from GitHub and installs them automatically.
+
+| Plugin | What it does |
+|---|---|
+| **MCP Adapter** | The "phone line" that lets any AI talk to WordPress |
+| **MCP Tools for Elementor** | The Elementor-specific MCP server — the magic |
+
+### Layer 5 — This kit *(handled by `INSTALL.sh` / `INSTALL.bat`)*
+
+The two files in this repo's `files/` folder get copied to:
+
+- `~/.claude/skills/elementor-mcp/SKILL.md` — the cheat sheet Claude reads each session
+- `~/.claude/scripts/setup-elementor-mcp.sh` — the wizard you run per WordPress site
+
+> 📋 **Want a one-page reference of every file/plugin the kit touches?** See [`docs/WHATS_INSTALLED.md`](docs/WHATS_INSTALLED.md).
 
 ---
 
@@ -91,13 +129,17 @@ Safe to re-run — it'll ask before overwriting existing files.
 bash ~/.claude/scripts/setup-elementor-mcp.sh
 ```
 
-The wizard asks 4 questions:
+The wizard walks you through 8 steps:
 1. Local or live host?
 2. Site URL or Local site name
-3. WordPress username (your login, NOT the app password's label)
-4. Application password
+3. Connectivity check
+4. WordPress username + Application password
+5. Reports which baseline plugins/theme are already active
+6. **Offers to auto-install** missing ones (Elementor, UAE, Hello Elementor, optionally Essential Addons + Fluent Forms)
+7. Installs the two MCP plugins from GitHub
+8. Writes `.mcp.json` to the current folder
 
-It handles plugin installs, auth, MySQL socket discovery (Local), and writes a `.mcp.json` to the current folder.
+If you say "yes" at step 6, the wizard installs the required plugins from wordpress.org for you. If you say "no" — say if you're using an existing site you don't want auto-modified — install them manually via WP Admin → Plugins → Add New.
 
 ### Every session
 

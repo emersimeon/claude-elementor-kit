@@ -20,24 +20,31 @@ The MCP exposes ~75 Elementor tools. Claude loads schemas lazily as needed.
 
 ## Prerequisites
 
-**On the WordPress site** *(install before running setup):*
+**On your computer:**
 
-| Plugin | Required? | Notes |
-|---|---|---|
-| Elementor (free) | **Yes** | The page builder itself |
-| Hello Elementor (theme) | Strongly recommended | Blank canvas — other themes inject CSS that fights Elementor |
-| Header Footer Elementor (Brainstorm Force / UAE) | If building custom header/footer | Theme Builder is Pro; this fills the gap |
-| Fluent Forms / WPForms / CF7 | If you want a real contact form | Form widget is Pro |
-| Essential Addons Lite | Optional | Adds free Post Grid widget |
+- [Claude Code](https://claude.ai/download)
+- [Local by Flywheel](https://localwp.com/) *(if running offline WordPress)*
+- [Git Bash](https://git-scm.com/download/win) *(Windows only — Mac/Linux already have what's needed)*
 
-*The setup script will warn you if Elementor or Hello Elementor are missing.*
+**On the WordPress site:**
 
-**On your machine:**
+- A working WordPress install *(local or live — both supported)*
+- An [Application Password](https://wordpress.org/documentation/article/application-passwords/) created from your user profile
 
-- macOS or Linux (script is bash)
-- `curl`, `python3`, `unzip`, `zip` (all preinstalled on macOS)
-- Claude Code (CLI or desktop app)
-- For Local sites: Local-by-Flywheel installed and the site **started**
+**Plugins + theme:**
+
+The setup wizard offers to install all the required plugins for you in step 6. If you'd rather install manually, here's what's needed:
+
+| | What it does |
+|---|---|
+| **Elementor (free)** *(required)* | Page builder |
+| **Hello Elementor** *(theme, required)* | Blank canvas |
+| **Ultimate Addons (UAE)** *(required)* | Site-wide headers/footers + free Nav Menu widget |
+| **Essential Addons (lite)** *(optional)* | Extra free widgets |
+| **Fluent Forms** *(optional)* | Real contact forms |
+| **MCP Adapter + MCP Tools for Elementor** *(automatic)* | Wizard installs these from GitHub for you |
+
+For a one-page reference of every plugin/file the kit touches, see [`WHATS_INSTALLED.md`](WHATS_INSTALLED.md).
 
 ---
 
@@ -49,18 +56,19 @@ From inside your **project directory** (where you want the `.mcp.json` to live �
 bash ~/.claude/scripts/setup-elementor-mcp.sh
 ```
 
-The wizard walks you through 7 steps:
+The wizard walks you through 8 steps:
 
 1. **Local vs live** — pick (1) for `~/Local Sites/...` or (2) for any live URL
 2. **Site URL** — for Local it auto-detects `<site-name>.local`; for live you paste the full URL
 3. **Connectivity probe** — confirms the WP REST API is reachable
-4. **Auth** — you create an Application Password in WP Admin and paste it
-   > **Critical gotcha:** the password's *name/label* is just a label. The username is your actual WP login (e.g. `admin`, not "ClaudeMCP"). The wizard will list public users if auth fails so you can find the right slug.
-5. **Plugin baseline** — confirms Elementor is active and warns if Hello Elementor isn't the theme
-6. **Plugin install** — handles the GitHub-only zips:
-   - On Local: installs both via the bundled WP-CLI (auto-finds the per-site MySQL socket — this is the part that's painful by hand)
+4. **Auth** — paste your username + Application Password
+   > ⚠️ **Critical gotcha:** the password's *name/label* is just a label. The username is your actual WP login (e.g. `admin`, not "ClaudeMCP"). The wizard will list public users if auth fails so you can find the right slug.
+5. **Plugin baseline report** — shows which baseline plugins/theme are already active
+6. **Auto-install offer** — if anything's missing, the wizard offers to install Elementor, Hello Elementor theme, UAE, and optionally Essential Addons + Fluent Forms from wordpress.org. Say yes for fresh demo sites; say no if you're using an existing site you don't want auto-modified.
+7. **MCP plugins install** — handles the GitHub-only zips:
+   - On Local: installs both via the bundled WP-CLI (auto-finds the per-site MySQL socket)
    - On live: prints the two `.zip` paths and waits while you upload them via WP Admin → Plugins → Add New → Upload Plugin
-7. **`.mcp.json` written** to the current directory
+8. **`.mcp.json` written** to the current directory
 
 When it prints `✓ Setup complete`, you're 90% done.
 
