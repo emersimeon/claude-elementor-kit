@@ -620,18 +620,37 @@ cat <<EOF
 
   ${BOLD}${GREEN}✓ Setup complete${RESET}
 
-  ${BOLD}Next steps:${RESET}
+  ${BOLD}Three steps to start using it:${RESET}
     1. ${CYAN}Quit Claude Code${RESET} (Cmd-Q in the desktop app, or Ctrl-C in the CLI)
     2. ${CYAN}Reopen it in this directory:${RESET}  cd "$PROJECT_DIR"
     3. Claude Code will ask you to ${BOLD}approve the 'elementor' MCP server${RESET} — say yes
-    4. Tell Claude to invoke the elementor-mcp skill, e.g. "build me an Elementor page" — it will load the conventions and start building
 
-  ${BOLD}Useful commands inside Claude:${RESET}
-    list-pages                       confirm auth + see existing pages
-    get-global-settings              read current colors/fonts kit
-    update-global-colors / typography  set design tokens
-    create-page                      new page (use template: "elementor_canvas")
-    add-container, add-heading, ...  build sections
+  ${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}
+  ${BOLD}What can you do now?${RESET}
+
+  Claude can ${BOLD}build${RESET}, ${BOLD}edit${RESET}, ${BOLD}reference${RESET}, or ${BOLD}explore${RESET} your Elementor site.
+  Type ${CYAN}/elementor-mcp${RESET} or ask in plain words. Examples:
+
+  ${BOLD}🏗  Build${RESET} — create new pages or sections from a design
+    ${DIM}"Build me a homepage based on this HTML mockup"${RESET}
+    ${DIM}"Add a contact section with a form"${RESET}
+    ${DIM}"Build a site-wide header using my Main menu"${RESET}
+
+  ${BOLD}✏  Edit${RESET} — change something on an existing page
+    ${DIM}"Make the hero headline 20% smaller"${RESET}
+    ${DIM}"Change the burgundy color to navy"${RESET}
+    ${DIM}"Replace the placeholder form with Fluent Forms id=1"${RESET}
+
+  ${BOLD}🔍  Reference${RESET} — inspect what's there
+    ${DIM}"Show me my current global colors"${RESET}
+    ${DIM}"List the pages on my site"${RESET}
+    ${DIM}"What's on the contact page?"${RESET}
+
+  ${BOLD}🧭  Explore${RESET} — figure out what's possible
+    ${DIM}"What can you do with my Elementor site?"${RESET}
+    ${DIM}"/elementor-mcp"  (Claude will ask which mode you want)${RESET}
+
+  ${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}
 
   ${BOLD}Reference:${RESET}
     Skill file: ~/.claude/skills/elementor-mcp/SKILL.md

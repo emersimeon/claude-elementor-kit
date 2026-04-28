@@ -1,17 +1,45 @@
 ---
 name: elementor-mcp
-description: Build, debug, or extend a WordPress + Elementor site through the elementor-mcp MCP server. Use when the user references the Elementor MCP, wants to programmatically build/edit Elementor pages on a local or live WordPress site, asks to "set up Elementor MCP" against a Local-by-Flywheel site or live host, or invokes elementor-mcp tools (`mcp__elementor__elementor-mcp-*`). Also covers initial install of the MCP Adapter + elementor-mcp plugins, app-password auth wiring, schema-loading discipline, and the widget-vs-HTML decision tree. SKIP for Bricks, Divi, Beaver Builder, or non-Elementor WordPress builds.
+description: Helps with WordPress + Elementor work via the elementor-mcp MCP server — building new pages, editing existing ones, inspecting site state, or exploring what's possible. Asks what the user wants before acting. Use when the user references the Elementor MCP, invokes `/elementor-mcp`, or runs `mcp__elementor__elementor-mcp-*` tools. Also covers initial install of the MCP Adapter + elementor-mcp plugins, app-password auth wiring, schema-loading discipline, and the widget-vs-HTML decision tree. SKIP for Bricks, Divi, Beaver Builder, or non-Elementor WordPress builds.
 ---
 
-# Elementor MCP Build Skill
+# Elementor MCP Skill
 
 You are operating against a WordPress site with the **elementor-mcp** server (`https://github.com/msrbuilds/elementor-mcp`) connected via the WordPress MCP Adapter. This skill captures everything I learned the hard way the first time through, so subsequent sessions start at expertise level.
 
+## 🛑 First Action Protocol — ASK BEFORE DOING
+
+**When this skill is invoked, do not start running tools. Ask the user what they want first.**
+
+If the user's invocation message *already* contains a clear task — *"build me a hero section from `index.html`"*, *"show me my current global colors"*, *"change the burgundy to navy"* — proceed with that task directly.
+
+Otherwise *(invocations like `/elementor-mcp` alone, or "use the Elementor MCP" with no follow-up)*, **respond with this menu and wait for the user to pick:**
+
+```
+What would you like to do with your Elementor site?
+
+  1. Build       — create new pages or sections from a design
+  2. Edit        — change something on an existing page
+  3. Reference   — inspect current state (pages, colors, fonts, content)
+  4. Explore     — show me what's possible / what can the MCP do here
+```
+
+Do **not** silently default to "build" — that's the most destructive action and forces a path the user may not want. Wait for the user to choose 1/2/3/4 *(or describe their task in their own words)* before invoking any MCP tool other than the harmless read-only ones at the bottom of this section.
+
+### Read-only "smoke test" calls that are always safe to run
+
+When the user picks any option, you can run these **before** asking follow-up questions, since they help frame the next response:
+
+- `mcp__elementor__elementor-mcp-list-pages` — confirms auth + lists what's there
+- `mcp__elementor__elementor-mcp-get-global-settings` — current colors/fonts kit
+
+That's it for unprompted tool calls. **Anything that creates, modifies, or deletes data requires the user to have explicitly asked for it.**
+
 ## When this skill applies
 
-- The user mentions Elementor MCP, says "build with the Elementor MCP", or asks to set it up
+- The user mentions Elementor MCP, types `/elementor-mcp`, or says "use the Elementor MCP"
 - A `.mcp.json` in the project registers an MCP server pointing at `wp-json/mcp/elementor-mcp-server`
-- The user asks to programmatically scaffold an Elementor homepage/page on a local-by-flywheel or live host
+- The user asks to build, edit, inspect, or troubleshoot an Elementor page
 - Tools beginning with `mcp__elementor__elementor-mcp-*` are available
 
 ## First-session setup (when MCP not yet connected)
@@ -155,7 +183,9 @@ The `f8d1545` is the `element_id` returned when you created the tabs widget. Alw
 
 > ⚠️ **An HTML widget used for cross-widget styling MUST contain only `<style>`.** If you find yourself adding HTML markup *(divs, anchors, spans with text content)* alongside the style block, you're falling back into the anti-pattern at the top of this section. Stop. That markup belongs in native widgets.
 
-## Building order
+## When the user asks to BUILD — building order
+
+> Use this section only when the user has explicitly asked you to build something. Do not run this flow on a bare `/elementor-mcp` invocation.
 
 For a new page, build top-down section by section, in small commits, verifying after each:
 
@@ -165,6 +195,39 @@ For a new page, build top-down section by section, in small commits, verifying a
 4. Build sections — outer container → inner content container (boxed, max-width 1360px-ish) → content
 5. After each section: `get-page-structure(post_id)` to verify nesting, or just curl the front page
 6. **Pause for human review** before building header/footer (which use Header Footer Elementor templates, a different flow)
+
+## When the user asks to EDIT
+
+Approach existing pages surgically — don't rebuild what you don't have to:
+
+1. `list-pages` to find the page they're editing
+2. `get-page-structure(post_id)` to see the current widget tree and grab element IDs
+3. For a specific element they describe ("the hero headline", "the third listing card"), use `find-element` if needed, then `update-element` with only the fields that change
+4. Verify the edit by re-reading `get-page-structure` or curling the rendered page
+5. **Never delete a section unless they explicitly ask** — even when restructuring. Use `move-element` or `update-element` first.
+
+## When the user asks to REFERENCE / INSPECT
+
+Read-only tools, no writes. Useful for "show me", "tell me", "what's", "list" requests:
+
+- `list-pages` — what pages exist
+- `get-global-settings` — colors, typography, layout settings
+- `get-page-structure(post_id)` — what's on a page
+- `get-element-settings(element_id)` — exact settings of one widget
+- `find-element(post_id, ...)` — locate a widget by content/type
+
+Format the response as a clear summary, not a JSON dump. The user wants understanding, not raw data.
+
+## When the user asks to EXPLORE / "what can you do?"
+
+Give a short menu *(don't dump all 75 tools)*. Point them at the four modes from the First Action Protocol with concrete examples:
+
+- *"Build a homepage from this HTML mockup"* → mode 1
+- *"Make the hero text 20% smaller"* → mode 2
+- *"Show me what colors are currently set globally"* → mode 3
+- *"What pages exist on the site?"* → mode 3
+
+Then ask which mode they want.
 
 ## Header/Footer notes
 
@@ -385,7 +448,9 @@ Use `ToolSearch` query format `select:tool1,tool2,tool3` to load multiple in one
 - Auto-translate arbitrary HTML/CSS into Elementor widgets — you read the source design and emit widget calls
 - Pixel-perfect parity with hand-coded HTML — Elementor's flexbox container model is the ceiling
 
-## Quick reference — the build flow that works
+## Quick reference — the build flow that works *(mode 1 only)*
+
+> Use this flow only after the user has explicitly chosen "Build" or asked to build a new site/page. Do **not** run this flow as a default response to `/elementor-mcp` — see the First Action Protocol at the top.
 
 ```
 1. setup-elementor-mcp.sh          # one-time, ~3 minutes
